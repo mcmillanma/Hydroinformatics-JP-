@@ -1,0 +1,103 @@
+# Intro Stats Activity {#statsactivity}
+
+Address each of the questions in the code chunk below and/or by typing outside the chunk (for written answers).
+
+## Problem 1
+Load the tidyverse and patchwork libraries and read in the Flashy and Pine datasets.
+
+```{r}
+library(tidyverse)
+library(patchwork)
+
+flashy <- read_csv("Flashy_Dat_Subset.csv")
+
+pine <- read_csv("PINE_NFDR_Jan-Mar_2010.csv")
+```
+
+## Problem 2
+Using the flashy dataset, make a pdf of the average basin rainfall (PPTAVG_BASIN) for the NorthEast AGGECOREGION. On that pdf, add vertical lines showing the mean, median, standard deviation, and IQR. Make each a different color and note which is which in a typed answer below this question. (or if you want an extra challenged, make a custom legend that shows this)
+
+```{r}
+
+#option click and drag to type same thing in multiple rows
+
+
+flashy2 <- filter(flashy, AGGECOREGION == "NorthEast")
+
+pptmean <- mean(flashy2$PPTAVG_BASIN)
+pptmedian <- median(flashy2$PPTAVG_BASIN)
+pptsd <- sd(flashy2$PPTAVG_BASIN)
+IQR <- IQR(flashy2$PPTAVG_BASIN)
+ 
+flashy %>% 
+  filter(AGGECOREGION == "NorthEast") %>%
+  ggplot(aes(PPTAVG_BASIN)) +
+  stat_density() +
+  geom_vline(xintercept = pptmean, color = "green") +
+  geom_vline(xintercept = pptmedian, color = "blue") +
+  geom_vline(xintercept = pptmean + pptsd, color = "red") +
+  geom_vline(xintercept = pptmean - pptsd, color = "red") +
+  geom_vline(xintercept = pptmedian + IQR, color = "yellow") +
+  geom_vline(xintercept = pptmedian - IQR, color = "yellow")
+
+  # green = mean, blue = median, red = standard deviation, yellow = IQR
+
+
+```
+
+## Problem 3
+Perform a Shapiro-Wilk test for normality on the data from question 2. Using the results from that test and the plot and stats from question 2, discuss whether or not the distribution is normal.
+
+```{r}
+
+flashy1 <- flashy %>% 
+  filter(AGGECOREGION == "NorthEast") 
+
+  
+shapiro.test(flashy1$PPTAVG_BASIN)
+
+
+```
+
+## Problem 4
+Make a plot that shows the distribution of the data from the PINE watershed and the NFDR watershed (two pdfs on the same plot). Log the x axis.
+
+```{r}
+
+# pine %>%
+ #ggplot(aes(cfs, color = StationID)) +
+  #stat_density() +
+  #scale_x_log10()
+#answer I submitted is wrong, correct below
+
+
+pine %>%
+ ggplot(aes(cfs, color = StationID)) +
+  geom_density( position = "identity", fill = NA) +
+  scale_x_log10()
+ 
+
+```
+
+## Problem 5
+You want to compare how variable the discharge is in each of the watersheds in question 4. Which measure of spread would you use and why? If you wanted to measure the central tendency which measure would you use and why?
+
+Answer: The best way to measure spread through looking at measures such as range, standard deviation, and Inner Quartile Range. Range is the simplest in that it shows the difference from the smallest to largest value. Standard Deviation is the square of the variance (deviation from the mean), and IQR splits data into 4 percentiles, therefore you could look at the values of the middle 50% and place less emphasis on extremes. To measure central tendency you can examine the median as it is the value in the middle. Mean is more likely to ce influenced by outlier. As IQR is based on median, it is also a helpful tool in examining central tendency.
+
+## Problem 6
+Compute 3 measures of spread and 2 measures of central tendency for the PINE and NFDR watershed. (hint: use group_by() and summarize()) Be sure your code outputs the result. Which watershed has higher flow? Which one has more variable flow? How do you know?
+```{r}
+
+Pine <- pine %>%
+  group_by(StationID) %>%
+  summarize(sd = sd(cfs), median = median(cfs), IQR = IQR(cfs), var = var(cfs), mean = mean(cfs))
+
+Pine
+  
+#Answer: Pine has higher flow and more variable flow because all values for measures of spread and measures of central tendency are higher
+  
+
+
+
+```
+

@@ -1,0 +1,115 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+# Intro Skills Activity {#introactivity}
+## Problem 1
+# clear enviro rm(list=ls())
+Load the tidyverse and lubridate libraries.
+
+library(tidyverse)
+library (lubridate)
+
+Read in the PINE_NFDR_Jan-Mar_2010 csv using read_csv()
+
+
+Make a plot with the date on the x axis, discharge on the y axis. Show the discharge of the two watersheds as a line, coloring by watershed (StationID)
+
+```{r}
+library(tidyverse)
+pine <- read_csv("PINE_NFDR_Jan-Mar_2010.csv")
+
+ggplot(pine, aes(datetime, cfs, color = StationID))+
+  geom_line()
+
+```
+
+## Problem 2
+
+Make a boxplot to compare the discharge of Pine to NFDR for February 2010.
+
+Hint: use the pipe operator and the filter() function.
+
+Hint2: when you filter dates, you have to let R know you're giving it a date. You can do this by using the mdy() function from lubridate.
+
+```{r}
+pine %>%
+  filter(month == 2) %>%
+  ggplot(aes(StationID,cfs))+
+  stat_boxplot()+
+  scale_y_log10()
+
+# pine %>% filter(datetime >= mdy("02-01-2010") & datetime <= mdy("02-28-2010"))
+
+#pinefeb<- filter(pine,month == 2)
+#ggplot(pinefeb, aes(StationID,cfs))+
+  #stat_boxplot()+
+  #scale_y_log10()
+```
+
+## Problem 3
+
+Read in the Flashy Dat Subset file.
+
+For only sites in ME, NH, and VT: Plot PET (Potential Evapotranspiration) on the X axis and RBI (flashiness index) on the Y axis. Color the points based on what state they are in. Use the classic ggplot theme.
+
+```{r}
+flashy <- read_csv("Flashy_Dat_Subset.csv")
+ 
+flashy %>%
+  filter( STATE %in% c("ME", "NH", "VT")) %>%
+  ggplot(aes(PET, RBI, color = STATE))+
+  geom_point() +
+  theme_classic()
+
+
+```
+
+## Problem 4
+
+We want to look at the amount of snow for each site in the flashy dataset. Problem is, we are only given the average amount of total precip (PPTAVG_BASIN) and the percentage of snow (SNOW_PCT_PRECIP).
+
+Create a new column in the dataset called SNOW_AVG_BASIN and make it equal to the average total precip times the percentage of snow (careful with the percentage number).
+
+Make a barplot showing the amount of snow for each site in Maine. Put station name on the x axis and snow amount on the y. You have to add something to geom_bar() to use it for a 2 variable plot... check out the ggplot cheatsheet or do a quick internet search.
+
+The x axis of the resulting plot looks terrible! Can you figure out how to rotate the X axis labels so we can read them?
+
+```{r}
+flashy %>%
+  mutate(SNOW_AVG_BASIN = PPTAVG_BASIN * SNOW_PCT_PRECIP * 0.01) %>%
+  filter(STATE == "ME") %>%
+  ggplot(aes(STANAME, SNOW_AVG_BASIN)) +
+  geom_bar(stat="identity",position="dodge")+
+  coord_flip()
+
+```
+
+## Problem 5
+
+Create a new tibble that contains the min, max, and mean PET for each state. Sort the tibble by mean PET from high to low. Give your columns meaningful names within the summarize function or using rename().
+
+Be sure your code outputs the tibble.
+
+```{r}
+
+flashyStatePET <- flashy %>%
+  group_by(STATE) %>%
+  summarize(meanPET = mean (PET), maxPET = max(PET), minPET = (PET)) %>%
+  arrange(meanPET)
+```
+
+## Problem 6
+
+Take the tibble from problem 5. Create a new column that is the Range of the PET (max PET - min PET). Then get rid of the max PET and min PET columns so the tibble just has columns for State, mean PET, and PET range.
+
+Be sure your code outputs the tibble.
+
+```{r}
+
+flashy_range <- flashyStatePET %>%
+  mutate(rangePET = maxPET - minPET) %>%
+  select(STATE, meanPET, rangePET)
+
+```

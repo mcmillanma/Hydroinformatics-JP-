@@ -1,0 +1,157 @@
+---
+---
+---
+
+# ACTIVITY: Joins Pivots dataRetrieval {#joinpivotDR}
+
+## Load the tidyverse, dataRetrieval, and patchwork packages.
+
+```{r}
+rm(list=ls())
+library(tidyverse)
+library(dataRetrieval)
+library(patchwork)
+```
+
+## Problem 1
+
+Using readNWISqw(), read all the chloride (00940) data for the New River at Radford (03171000). Use the head() function to print the beginning of the output from readNWISqw.
+
+```{r}
+
+Rad <- "03171000"
+
+chl <- "00940"
+
+Rad_Chloride <- readNWISqw(siteNumber = Rad,
+                            parameterCd = chl)
+                            
+head(Rad_Chloride)
+
+```
+
+## Problem 2
+
+Using the readNWISdv (daily values) function, download discharge (00060), temperature (00003), and specific conductivity (00095) for the New River at Radford from 2007 to 2009 (regular year). Use renameNWIScolumns() to rename the output of the download. Use head() to show the beginning of the results of your download.
+
+```{r}
+
+chr <- c("00060","00010","00095")
+
+Rad_chr <- readNWISdv(siteNumbers = Rad, parameterCd = chr, startDate = "2007-01-01", endDate = "2009-12-31") 
+
+Rad_dat <- renameNWISColumns(Rad_chr)
+
+head(Rad_dat)
+
+                    
+```
+
+## Problem 3
+
+Do a left join on newphys and newriver to add the chloride data to the daily discharge, temp, and conductivity data. hint: you will join on the date. Preview your data below the chunk using head().
+
+```{r}
+
+Rad_joined <-left_join(Rad_dat, Rad_Chloride, by = c( "Date" = "sample_dt")) 
+
+
+head(Rad_joined)
+```
+
+## Problem 4
+
+Create a line plot of Date (x) and Flow (y). Create a scatter plot of Date (x) and chloride concentration (y). Put the graphs on top of each other using the patchwork library.
+
+```{r}
+Flow <- Rad_joined %>%
+  ggplot(aes(Date, Flow)) +
+  geom_line()+
+  theme_classic()
+
+ Chloride <- Rad_joined %>%
+  ggplot(aes(Date,result_va)) + 
+  geom_point() +
+  ylab("Chloride Concentration")
+  theme_classic()
+   
+ 
+ Chloride
+ Flow
+ 
+ 
+wrap_plots (Flow/Chloride)
+
+```
+
+## Problem 5
+
+Create a scatter plot of Specific Conductivity (y) and Chloride (x). Challenge: what could you do to get rid of the warning this plot generates about NAs.
+
+```{r}
+ggplot(Rad_joined, aes (result_va, SpecCond)) +
+  geom_point() +
+  ggtitle("Chloride vs Specific Conductivity") +
+  xlab("Chloride Concentration") +
+  ylab("Specific Conductance") +
+  theme_classic()
+
+# I could have done an inner_join instead of a left_join to remove NAs
+
+
+
+```
+
+## Problem 6
+
+Read in the GG chem subset data and plot Mg_E1 (x) vs Ca_E1 (y) as points.
+
+```{r}
+GG <- read_csv("GG_chem_subest.csv")
+
+GG %>% ggplot(aes(Mg_E1, Ca_E1)) +
+  geom_point() +
+  theme_classic()
+
+
+```
+
+## Problem 7
+
+We want to look at concentrations of each element in the \#6 dataset along the stream (Distance), which is difficult in the current format. Pivot the data into a long format, the data from Ca, Mg, and Na \_E1 columns should be pivoted. Make line plots of each element where y is the concentration and x is distance. Use facet_wrap() to create a separate plot for each element and use the "scales" argument of facet_wrap to allow each plot to have different y limits.
+
+```{r}
+
+GG_chem <- pivot_longer(GG, cols = c(Mg_E1, Ca_E1, Na_E1))
+  
+GG_chem %>%
+  ggplot(aes(Distance, value)) +
+  geom_line() +
+  facet_wrap(facets = "name", nrow = 3, scales = "free") +
+  theme_classic()
+
+
+#-or-
+
+Mg <- GG %>%
+    ggplot(aes(Distance, Mg_E1)) +
+  geom_line() +
+  theme_classic()
+  
+  Ca <- GG %>%
+    ggplot(aes(Distance, Ca_E1)) +
+  geom_line() +
+  theme_classic()
+  
+  Na <- GG %>%
+    ggplot(aes(Distance, Na_E1)) +
+  geom_line() +
+  theme_classic()
+    
+Mg
+Ca
+Na
+
+
+wrap_plots(Mg,Ca, Na, nrow = 3)
+```

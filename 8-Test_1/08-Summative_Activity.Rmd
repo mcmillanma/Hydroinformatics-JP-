@@ -1,0 +1,237 @@
+# ACTIVITY Summative 1 {#Summative1}
+
+### Instructions
+
+Please read carefully!\
+
+Write your code in the provided code chunks and answer any questions by typing outside the chunk.
+
+Comment your code to let me know what you are trying to do, in case something doesn't work.
+
+Turn in a knitted rmd (html or pdf). If you can't get your document to knit when you go to turn it in, just comment out the lines of code that are causing the knit to fail, knit the document, and submit.
+
+## Problem 1
+Load the tidyverse, lubridate, patchwork, and dataRetrieval packages.
+
+```{r}
+
+rm(list=ls())
+library(tidyverse)
+library(lubridate)
+library(patchwork)      
+library(dataRetrieval)
+library(tidyr)
+theme_set(theme_classic())
+
+results = "hide"
+  
+```
+
+## Problem 2
+Read in the McDonald Hollow dataset in the project folder.
+
+What are the data types of the first three columns?
+
+How long is the data (number of rows)?
+
+What is the name of the last column?
+
+```{r}
+hollow <- read_csv("McDonald_Hollow.csv") 
+
+```
+##Answer: 
+1.To see this information I could have not assigned it as an object and read it or use structure() in the console. Column 1 is datetime <dttm>; if the column were two/ separated into one date and one date column, the data type would be <date>, and <time>. The second and third columns (turbidityNTU and TSSmgL) are both <dbl> which stands for double which is short for double-precision floating-point format; basically numbers including decimal points.
+2. The data has 8831 observations/rows excluding the row of column names
+3. The 12th column is named TempC_pool
+
+
+## Problem 3
+Plot the stage of the stream (Stage_m\_pt) on the y axis as a line and the date on the x. These stage data are in meters, convert them to centimeters for the plot.
+
+For all plots in this test, label axes properly and use a theme other than the default.
+
+```{r}
+
+hollow %>% tidyr::separate(datetime, c("Date", "time"), sep = " ", remove = "FALSE") %>%
+  mutate(Stage_cm = Stage_m_pt * 100) %>%
+  ggplot(aes(datetime, Stage_cm)) +
+  geom_line(color = "blue") + 
+  ylab("Stage (cm)") +
+  ggtitle("McDonald Hollow Stage (cm)") 
+
+
+
+```
+
+## Problem 4
+We want to look at the big event that happens from November 11, 2020 to November 27, 2020. Filter the dataset down to this time frame and save it separately. Make a plot with the same setup as in \#3 with these newly saved data.
+
+We also want to see how specific conductivity changes during the event. Create a second plot of specific conductivity (SpC_mScm) for the same time range. 
+
+Stack these two plots on top of each other using the patchwork package.
+
+```{r}
+ 
+hollow_1 <- hollow %>% 
+  tidyr::separate(datetime, c("Date", "time"), sep = " ", remove = "FALSE") %>%
+  mutate(Stage_cm = Stage_m_pt * 100) %>%
+  filter(Date >= ymd("2020-11-11") & Date <= ymd("2020-11-27"))
+
+stage <- hollow_1 %>%
+  ggplot(aes(datetime, Stage_cm)) +
+  geom_line(color = "blue") + 
+  ylab("Stage (cm)") +
+  ggtitle("Nov. 11-27, 2020 Stage") 
+
+sc <- hollow_1 %>% 
+  ggplot(aes(datetime, SpC_mScm)) +
+  geom_line(color = "red") + 
+  ylab("SC (mS/cm)") +
+  ggtitle("Nov. 11-27, 2020 Specific Conductance")
+
+stage/sc
+#scale_x_date(labels = date_format("%m-%Y"))
+```
+
+## Problem 5
+For the same storm, we are curious about how conductivity changes with the stream level. To do this, make a scatter plot that shows Stage on the x axis and specific conductivity (SpC_mScm) on the y. (units: mScm) Color the points on the plot using the datetime column. Use the plot to describe how specific conductivity changes with stream stage throughout the storm. (not based on hydrologic processes, just describe the pattern in values on the plot)
+
+```{r}
+ 
+hollow_1 %>%
+  ggplot(aes(Stage_cm, SpC_mScm, color = datetime)) +
+  geom_point() +
+  xlab("Stage height (cm)") +
+  ylab("Specific Conductance (mS/cm)") +
+  labs(color = "Date and Time")
+
+```
+##Answer: It seems that Specific Conductance goes down as stage goes up, most likely due to dilution. In early Nov, stage was low and SC high until stage increased rapidly (storm) and SC went down. Around the 16th, stage and SC began to go back down a little slower than it rose. Around the 19-20th stage and SC began to lower at an even slower rate, although SC did not return to as high as it was before the storm event.
+
+## Problem 6
+Continuing to look at the storm, as an exploratory data analysis, we want to create a plot that shows all the parameters measured. To do this, pivot the STORM EVENT data so there is a column that has the values for all the parameters measured as individual rows, along with another column that identifies the type of measurement. Then use facet_wrap with the "name" column (or whatever you call it) as the facet. Be sure to set the parameters of facet_wrap such that the y axes are all allowed to be different ranges.
+
+We need to get rid of a few parameters that aren't helpful though, so remove "Press_cmH2O_pt", "PPO2",  and "TSSmgL"
+
+EX:\
+Date Value Name\
+10/1/20 12 Stage\
+10/1/20 6 Temp\
+....
+
+##Note: I took out stage in m on purpose because I wasn't sure which you wanted
+
+```{r}
+
+hollow_1 %>%
+  select(-c("Date", "time", "Press_cmH2O_pt", "PPO2", "TSSmgL", "Stage_m_pt")) %>%
+  pivot_longer(-c(datetime)) %>%
+  ggplot(aes(datetime, value)) +
+  geom_line() +
+  ggtitle("McDonald Hollow Storm November 2020") +
+  facet_wrap(facets = "name", nrow = 3, scales = "free") +
+  xlab("Date") +
+  ylab("Value")
+
+# to minus columns (-c(....))
+
+```
+
+## Problem 7
+We want to create a table that clearly shows the differences in water temperature for the three months at the two locations (flow and pool) in the FULL data set (not the storm subset). To do this: Create a new column in the full dataset called "month" and set it equal to the month of the datetime column using the month() function. Then group your dataset by month and summarize temperature at each location by mean. Save these results to a new object and output it so it appears below your chunk when you knit. Be sure the object has descriptive column names.
+
+You can do this all in one statement using pipes.
+
+```{r}
+
+hollow_avg <- hollow %>%
+  mutate(Month = month(datetime)) %>%
+  group_by(Month) %>%
+  summarise(TempC_mean_pool = mean(TempC_pool), TempC_mean_flow = mean(TempC_flow) )
+
+hollow_avg
+```
+
+## Problem 8
+Plot the distribution of the flow temperature and show as vertical lines on the plot the mean, median, and IQR. Be careful about how you show IQR. Look at the definition and then think about how you would put it on the plot. Describe in the text above the chunk what color is what statistic in the plot. Using the shape of the distribution and the measures you plotted, explain why you think the distribution is normal or not. What statistical test could you perform to see if it is normal?
+
+##Answer:
+- green is mean
+- blue is median
+- red is standard deviation
+- yellow is IQR
+- I would say this is not normal because it is not symmetrical on both sides of the mean.
+- shapiro.test(hollow$TempC_flow) can not be used to test if it is normal because the sample size must be between 3 and 5000 (we have 8831). Although, we could use this to test the data from the storm event. I would use
+ExNorm <- rnorm(8831, mean = 9.30623) %>%
+  as_tibble() 
+ExNorm %>%
+  ggplot(aes(value)) +
+  stat_density()
+to compare it to a normal distribution of the same sample size and mean.  
+
+
+```{r}
+
+mean <- mean(hollow$TempC_flow)
+median <- median(hollow$TempC_flow)
+sd <- sd(hollow$TempC_flow)
+IQR <- quantile(hollow$TempC_flow)
+
+ hollow %>%
+  ggplot(aes(TempC_flow)) +
+  stat_density() +
+  geom_vline(xintercept = mean, color = "green") +
+  geom_vline(xintercept = median, color = "blue") +
+  geom_vline(xintercept = c(IQR[2], IQR[4]), color = "yellow") 
+
+
+```
+
+## Problem 9
+In this question we will get and format data for three USGS gages.
+
+Gages: 03177710, 03173000, 03177480\
+Discharge in cubic feet per second (cfs) code: 00060
+
+a. Read and save the gage information for the three gages using readNWISsite().
+
+b. Use the readNWISdv() function to read and save the daily discharge values for the following three gages for the 2020 water year (10-01-2019 to 9-30-2020). And then use the renameNWIScolumns() function to make the names human-friendly.
+
+c. Join the gage site information from (a) to the data from (b) so you can reference the gages by their names.
+
+Output a preview of your data below the code chunk using head()
+
+```{r}
+ 
+sites <- c("03177710", "03173000", "03177480")
+cfs <- "00060"
+
+info <- readNWISsite(siteNumbers = sites)
+
+cfs <- readNWISdv(siteNumbers = sites, parameterCd = cfs, startDate = "2019-10-01", endDate = "2020-9-30") %>%
+  renameNWISColumns()
+
+joined <- left_join(cfs, info, by = "site_no") %>%
+  select("station_nm", "Flow", "Date", "site_no")
+
+head(joined)
+```
+
+## Problem 10
+
+Using the data from \#9, Plot flow on the y axis and date on the x axis, showing the data as a line, and coloring by gage name.
+
+#Note: I'd add facet_wrap(facets = "station_nm", nrow = 3, scales = "free")
+
+## Use whatNWISdata(siteNumber = sites, parameterCd = "00060") to see begin and end date
+
+```{r}
+joined %>%
+  ggplot(aes(Date, Flow, color = station_nm)) +
+  geom_line() +
+  ggtitle("2020 Water Year Flow") +
+  ylab( "Flow (cfs)") +
+  labs(color = "Guage Station")
+
+```
