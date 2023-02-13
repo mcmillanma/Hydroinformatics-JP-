@@ -1,0 +1,397 @@
+---
+title: "Final Assessment"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+## Final Exam/Summative Assessment
+
+Complete the tasks below using the data provided. Use the existing code
+chunks, adding more if needed. Be sure your code is well-formatted and
+commented appropriately.
+
+You are allowed to liberally copy and paste from the course
+notes/bookdown. There is no need to reinvent the wheel. You'll need to
+tweak things here or there to address the specific questions, but for
+the watershed delineation, fdc, and HBV parts, there is a LOT you can
+copy and paste from the course notes!
+
+Load the required packages here:
+
+```{r}
+
+library(tidyverse)
+library(raster)
+library(sf)
+library(whitebox)
+library(tmap)
+library(stars)
+library(patchwork)
+library(lubridate)
+library(plotly)
+library(plyr)
+library(rgl)
+results = "hide"
+
+whitebox::wbt_init()
+knitr::knit_hooks$set(webgl = hook_webgl)
+theme_set(theme_classic())
+results = "hide"
+```
+
+## Part 1: McDonald Hollow
+
+We are just starting to work at a new watershed monitoring station in
+McDonald Hollow on Brush Mountain outside Blacksburg and need to do some
+preliminary data analysis. Produce the following items to help describe
+the site.
+
+### a. A map of the watershed that drains to the station. (20 pts)
+
+The coordinates of the station are roughly 37.24, -80.483. There is a
+DEM of the area in the Data folder. It has already been prepared for
+hydrologic analysis (filled and breached).
+
+Show the watershed outline on this map over some sort of basemap that
+allows us to see terrain. This could be a hillshade or a default basemap
+from an open repository.
+
+```{r}
+tmap_mode("plot")
+
+dem <- raster("Data/mcdonald_filled_breached.tif")
+
+dem[dem < 1500] <- NA
+
+wbt_hillshade(dem = "Data/mcdonald_filled_breached.tif",
+              output = "Data/brush_hillshade.tif",
+              azimuth = 115)
+
+hillshade <- raster("Data/brush_hillshade.tif")
+
+
+wbt_d8_flow_accumulation(input = "Data/mcdonald_filled_breached.tif",
+                         output = "Data/D8FA.tif")
+
+wbt_d8_pointer(dem = "Data/mcdonald_filled_breached.tif",
+               output = "Data/D8pointer.tif")
+
+ppoint <- tribble(
+          ~Lon, ~Lat,
+        -80.483, 37.24
+          )
+
+ppointSP <- SpatialPoints(ppoint, proj4string = CRS("+proj=longlat +datum=WGS84"))
+
+shapefile(ppointSP, filename = "Data/pourpoints.shp", overwrite = TRUE)
+
+wbt_extract_streams(flow_accum = "Data/D8FA.tif",
+                    output = "Data/raster_streams.tif",
+                    threshold = 6000)
+
+wbt_jenson_snap_pour_points(pour_pts = "Data/pourpoints.shp",
+                            streams = "Data/raster_streams.tif",
+                            output = "Data/snappedpp.shp",
+                            snap_dist = 0.002) 
+
+pp <- shapefile("Data/snappedpp.shp")
+streams <- raster("Data/raster_streams.tif")
+
+wbt_watershed(d8_pntr = "Data/D8pointer.tif",
+              pour_pts = "Data/snappedpp.shp",
+              output = "Data/brush_watersheds.tif")
+
+ws <- raster("Data/brush_watersheds.tif")
+
+tm_shape(hillshade) +
+  tm_raster(style = "cont", palette = "-Greys", legend.show = FALSE)+
+tm_shape(ws)+
+  tm_raster(legend.show = TRUE, alpha = 0.5, style = "cat")+
+tm_shape(pp)+
+  tm_dots(col = "red")
+
+wsshape <- st_as_stars(ws) %>% st_as_sf(merge = T)
+
+
+tm_shape(hillshade) +
+  tm_raster(style = "cont", palette = "-Greys", legend.show = FALSE) +
+  tm_shape(wsshape) +
+  tm_borders(col = "red") +
+  tm_scale_bar() +
+  tm_compass(type = "8star", position = c("left", "bottom")) +
+  tm_layout(title = "Brush Mountain Watershed", title.color = "red", title.position = c("center", "top"))
+
+```
+
+### b. Make some plots of stage and specific conductivity.
+
+hint: you will have to join these two datasets to do this. Also, there
+is some bad data at the start of the stage dataset (intentionaly left
+for you :-)). The pressure transducer data was not being corrected with
+barometric pressure for a while, so there are stage values that are far
+too high (in the 9 m range). Be sure to filter out that time period.
+Additionally, filter out any Conductivity values above 60
+microsiemens/cm.
+
+Data prep: You'll use "McDonald_Conductivity.csv" and
+"McDonald_Stage.csv" in the Data folder
+
+Conductivity is in units of microsiemens per centimeter **(10 points)**
+
+```{r}
+stage <- read_csv("McDonald_Stage.csv")
+sc <- read_csv("McDonald_Conductivity.csv")
+
+scq <- left_join(stage, sc, by = "DateTime") %>%
+  filter(Stage_m < 4) %>%
+  filter(SpCond_mS_cm < 60) 
+
+scqlong <- pivot_longer(scq, c(Stage_m,SpCond_mS_cm))
+results = "hide"
+```
+
+### Plots to create:
+
+Stage and Specific Conductivity v. Time use facets or a composite plot.
+**(10 pts)**
+
+```{r}
+scplot <- ggplot(scq, aes(DateTime, SpCond_mS_cm)) +
+  geom_line()
+
+stageplot <- ggplot(scq, aes(DateTime, Stage_m)) +
+  geom_line()
+
+scplot/ stageplot
+
+ggplot(scqlong) + 
+  geom_line(mapping = aes(x = DateTime, y = value)) + 
+  facet_wrap("name", nrow = 2, scales = "free") +
+  ggtitle( "Specific Conductance and Stage 2020-2021") +
+  ylab("Stage (m) and Conductivity (mS/cm)") +
+  xlab(NULL)
+
+```
+
+A flow duration curve using the stage data. Be careful with your axis
+labels. **(10 pts)**
+
+```{r}
+scq <- scq %>%
+  mutate(rank = rank(-Stage_m)) %>%
+  mutate(P = 100*(rank/(length(Stage_m) +1)))
+
+scq %>% ggplot(aes(x = P, y= Stage_m)) +
+  geom_line() +
+  xlab("% Time Stage is equaled or exceeded")+
+  ylab("Stage (m)") +
+  ggtitle("Stage Duration Curve")
+
+```
+
+Stage (x) plotted against specific conductivity (y). **(10 pts)**
+
+```{r}
+
+scq %>% ggplot(aes(Stage_m, SpCond_mS_cm)) +
+  geom_point() +
+  stat_smooth() +
+  xlab("Stage (m)")+
+  ylab("Specific Conductance mS/cm") +
+  ggtitle("Specific Conductivity vs Stage")
+
+```
+
+## Part 2: HBV Calibration
+
+Calibrate the HBV model for watershed 3 at Hubbard Brook (same time
+period as in class) using the snow melt data set rather than discharge.
+Use a 1000 run Monte Carlo to do this.
+
+For your best model run, calibrated to snow melt, calculate the NSE for
+discharge.
+
+Prep Data for the Model and load HBV function: **(10 pts)**
+
+```{r}
+source('HBV/HBV.R')
+start <- mdy("01-01-2009") 
+end <- mdy("12-31-2012") 
+
+P1 <- read_csv("HBV/Pwd2009-2012.csv") %>%
+  mutate(DATE = ymd(DATE)) %>%
+  dplyr::select(DATE, WS_3) %>%
+  filter(DATE >= start & DATE <= end)
+
+P <- P1$WS_3
+
+Temp1 <- read_csv("HBV/Tdm2009-2012.csv") %>%
+  mutate(DATE = ymd(DATE)) %>%
+  dplyr::select(DATE, STA_1) %>%
+  filter(DATE >= start & DATE <= end)
+
+Temp <- Temp1$STA_1
+
+lat <- 43 + 57/60 #43 degrees and 57 minutes
+latrad <- (lat/360) * 2 * pi #convert to radians
+
+PET1 <- dplyr::select(Temp1, DATE) %>%
+         mutate(DOY = yday(DATE)) %>% #DOY for dates
+         mutate(tempvar = (2 * pi / 365) * DOY) %>%
+         #declination of the sun above the celestial equator in 
+         #radians on day JulDay of the year
+         mutate(delta_h = 0.4093 * sin(tempvar - 1.405)) %>% 
+         #day length in h
+         mutate(daylen = (2 * acos(-tan(delta_h) * tan(latrad)) / 0.2618)) %>% 
+         mutate(
+           PET = 29.8 * daylen * 0.611 * exp(17.3 * Temp / 
+                  (Temp + 237.3)) / (Temp + 273.2))  #PET Hamon method
+PET <- PET1$PET
+
+
+Qobs1 <- read_csv("HBV/SWD2009-2012.csv") %>%
+  mutate(DATE = ymd(DATE)) %>%
+  dplyr::select(DATE, WS_3) %>%
+  filter(DATE >= start & DATE <= end)
+  
+Qobs <- Qobs1$WS_3
+
+ #Read and prep snow data
+snow_obs <- read_csv("HBV/sno2009-2012.csv") %>%
+         select(DATE, STA2) %>%
+         mutate(DATE = ymd(DATE)) %>%
+         filter(DATE >= start & DATE <= end)
+
+snow <- snow_obs$STA2
+DATE <- snow_obs$DATE
+
+```
+
+Calibrate HBV on snow with 1000 run monte carlo: **(10 pts)**
+
+\*Note: In the monte carlo in the bookdown, Use cbind to add Qobs. In
+this version you need to add Qobs1, because it has a DATE column. This
+allows you to bring in the snow data by joining on the DATE column.
+
+```{r}
+#number of runs
+N <- 1000
+
+# PARAMETERS RANGE and generate set
+FC    <- runif(N, min = 40   , max = 400)  #Max soil moisture storage, field capacity
+beta  <- runif(N, min = 1    , max = 6)    #Shape coefficient governing fate of water input to soil moisture storage
+LP    <- runif(N, min = 0.3   , max = 1)    #Threshold for reduction of evap
+SFCF  <- runif(N, min = 0.4  , max = 1.2)  #Snowfall correction factor
+TT    <- runif(N, min = -1.5 , max = 1.2)  #Threshold temperature
+CFMAX <- runif(N, min = 1    , max = 8)    #Degree-day factor
+k0    <- runif(N, min = 0.05 , max = 0.5)  #Recession constant (upper storage, near surface)
+k1    <- runif(N, min = 0.01 , max = 0.3)  #Recession constant (upper storage)
+k2    <- runif(N, min = 0.001, max = 0.15) #Recession constant (lower storage)
+UZL   <- runif(N, min = 0    , max = 70)   #Threshold for shallow storage
+PERC  <- runif(N, min = 0    , max = 4)    #Percolation, max flow from upper to lower storage
+MAXBAS<- rep(1, N)   #base of the triangular routing function, days
+#MAXBAS is just 1's because routing will be set to zero, so the parameter isn't used
+
+NSE <- rep(NA, N) #create NSE column, to be filled in for loop
+
+routing <- 0
+
+pars <- cbind(FC, beta, LP, SFCF, 
+               TT, CFMAX, k0, k1, 
+               k2, UZL, PERC, MAXBAS, NSE)
+
+#trim the first 40% (warm up) of snow off for NSE calculation 
+EvalStart <- floor(length(Qobs) * 0.4)
+EvalEnd <- length(Qobs)
+
+
+for (i in 1:N){
+   
+   #call model with i parameter set generated above
+   results <- HBV(pars[i,1:12], P, Temp, PET, routing)
+   
+   #add the Qobs and snow to results
+   results <- cbind(results, Qobs1)
+   
+   results <- left_join(results, snow_obs, by = "DATE")
+   
+   #trim the first 40% of the record so it isn't included in the NSE calculation
+   results <- results[EvalStart:EvalEnd,]
+   
+   results <- drop_na(results, STA2)
+    
+   #Calculate NSE and add to parameter set
+   pars[i,13]  <- 1 - ((sum((results$STA2 - results$SWE) ^ 2)) / sum((results$STA2 - mean(results$STA2)) ^ 2))
+   
+}
+results = "hide"
+
+```
+
+### Make two plots:
+
+a.  Observed vs. Modeled discharge **(5 pts)**
+
+    ```{r}
+    #find best parameters
+    pars <- as_tibble(pars) 
+
+    bestparams <- pars %>% filter(NSE == max(NSE)) %>% dplyr::slice(1) %>% as.numeric()
+
+    #run with best parameters
+    modeloutput <-  HBV(bestparams, P, Temp, PET, routing)
+
+    #add observations for plotting (Snow and Flow)
+    modeloutput <- bind_cols(modeloutput, Qobs1)
+    modeloutput <- left_join(modeloutput, snow_obs, by = "DATE")
+
+    #trim out warm up period for plotting
+    OutputTrim <- filter(modeloutput, DATE >= mdy("08-07-2010"))
+
+    #Flow NSE
+    NSEq <- 1 - ((sum((OutputTrim$q - OutputTrim$WS_3)^2))/
+              sum((OutputTrim$WS_3 - mean(OutputTrim$WS_3))^2))
+
+    NSEq
+
+    #Create plot of flow with NSE in title
+    OutputTrim %>% plot_ly(x = ~DATE) %>% 
+        add_trace(y = ~q, name = 'Modeled',  type = 'scatter', mode = 'lines') %>% 
+        add_trace(y = ~WS_3, name = 'Measured', type = 'scatter', mode = 'lines') %>% 
+        layout(title=paste("Modeled and Measured Flow, NSE:", round(NSEq,2)))
+    ```
+
+b.  Observed vs. Modeled snow **(5 pts)**
+
+    ```{r}
+    #Snow NSE
+    OutputTrimsno <- drop_na(OutputTrim, STA2)
+
+    NSEsnow  <- 1 - ((sum((OutputTrimsno$STA2 - OutputTrimsno$SWE) ^ 2)) / sum((OutputTrimsno$STA2 - mean(OutputTrimsno$STA2)) ^ 2))
+
+    NSEsnow
+
+    OutputTrim %>% plot_ly(x = ~DATE) %>% 
+        add_trace(y = ~SWE, name = 'Modeled',  type = 'scatter', mode = 'lines') %>% 
+        add_trace(y = ~STA2, name = 'Measured', type = 'scatter', mode = 'lines') %>% 
+        layout(title=paste("Modeled and Measured Snow, NSE:", round(NSEsnow,2)))
+    ```
+
+And provide the snow NSE and the discharge NSE. **(5 pts)** \*See figure
+title and code provided
+
+### Answer the following question:
+
+Was the discharge NSE better or worse than when we calibrated on
+discharge? Why do you think this is? **(5 pts)**
+
+Answer: The NSE was worse than when we calibrated on discharge.
+Nash-Sutcliffe Efficiency (NSE) looks at how much better your model run
+did than if you had just used the mean discharge for the data record as
+your "modelled results". NSE is worse when calibrated with snow because
+there are less data points available.
