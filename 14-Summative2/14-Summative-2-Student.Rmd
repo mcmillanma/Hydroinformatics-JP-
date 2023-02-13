@@ -1,0 +1,156 @@
+---
+title: "14-Summative-2"
+output:
+  html_document: default
+  pdf_document: default
+---
+Given: you will use the following packages.
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tmap)
+library(sf)
+library(dataRetrieval)
+library(patchwork)
+
+#packages I added
+#library(lubridate)
+
+#rm(list = ls())
+```
+
+For our second summative assessment, You will complete a task rather than a series of questions. The task is designed to draw on most of the skills we have practiced in class so far. You can find examples of everything you need to do in our course notes. The challenge here is to apply those lessons to produce a desired outcome.
+
+The only thing you have to do that we did not do in class is to read in a shapefile. So here is the code to read the shapefile with the watersheds used in the assessment:
+watersheds <- st_read("watersheds.shp")
+
+You will also need the following equation to convert flow from cfs to mm/day:
+
+Q in mm/day = 2.447 * (Qcfs / Area)
+
+Where Qcfs is discharge in cfs and Area is watershed area in square kilometers (both given in the test data)
+
+Task: 
+
+You need to summarize the discharge behavior of two watersheds for a project. You've been tasked with producing two figures to accomplish this. The watersheds are different sizes, so to facilitate comparison, all discharge must be presented in the figures as area-normalized discharge in units of mm/day. The equation to make this conversion is included above.
+
+To summarize the discharge behavior of the Bluestone River and Wolf Creek from January 1, 1980 to January 1, 2020, produce the following two figures:
+
+1. A map showing the two watersheds. Make each wataershed a different color based on its name and be sure there is a legend that tells which colored watershed is which. Add the median flow for each watershed in mm/day as a text label in each watershed. Be sure the map has a legend, scale bar, and north arrow.
+
+2. A single multi-panel figure that shows discharge for the two watersheds, where each watershed has it's own plot (ie don't put them both on one plot colored by name), and then another plot showing flow duration curves for both watersheds in one plot area, with the line for each watershed colored by name. The discharge plots and the flow duration curve plot should be made with discharge in units of mm/day. 
+
+*Hint: To make nice labels to add to the map for median flow, use mutate to add a new column that has the labels formatted the way you want. You can round the median flow with round() and add units with paste().
+
+*In the project folder are the shapefile of the watershed boundaries (there is code to read that in above), and gageids.csv, which contains the names of the gages/watersheds and other information, like the watershed area.
+
+*Organize your code into chunks and describe what you did in each above the chunk. This will allow me to give you points even if the code doesn't do what it is supposed to.
+
+*Below the output of the two figures, describe any differences you see in the two watersheds and their discharge records. For this answer, draw on information from the map, the hydrographs, and the flow duration curves.
+
+```{r}
+#1 Map of Bluestone River and Wolf Creek River watersheds with median flow
+View(parameterCdFile)
+
+#assign necessary values as objects
+siteno <- c("03177710", "03175500")
+parameter <-"00060"
+start <- "1980-01-01"
+end <- "2020-01-01"
+gageids <- read_csv("gageids.csv")
+watersheds <- st_read("watersheds.shp") 
+
+#read in flow, add column with watershed area, and add column with Flow in mm/day, rank, and P value (rank and P value needed for question 2). 
+flow <- readNWISdv(siteno, parameter, start, end) %>%
+  renameNWISColumns()
+
+wolf <- filter(flow, site_no == "03175500") %>%
+  mutate(Area = 578.252000) %>%
+  mutate(site_nm = "Wolf Creek Near Narrows, VA") %>%
+  mutate("Qmm_day" = 2.447 * (Flow / Area)) %>%
+  mutate(rank = rank(-Qmm_day)) %>%
+  mutate(P = 100*(rank/(length(Qmm_day)))) 
+
+blue <- filter(flow, site_no == "03177710") %>%
+   mutate(Area = 114.874000) %>%
+   mutate(site_nm = "Bluestone at Falls Mills, VA")%>%
+  mutate("Qmm_day" = 2.447 * (Flow / Area)) %>%
+  mutate(rank = rank(-Qmm_day)) %>%
+  mutate(P = 100*(rank/(length(Qmm_day)))) 
+
+flow <- rbind(wolf, blue)
+
+#find median and add to watersheds dataframe
+median(wolf$"Qmm_day")
+median(blue$"Qmm_day")
+
+watersheds$median_flow <- c("0.698 mm/day","0.873 mm/day" )
+watersheds$Station <- gageids$STANAME
+
+#mape sure tmap is in static map mode
+tmap_mode("plot")
+
+# map the watersheds
+head(watersheds) # look at shapefile data
+tm_shape(watersheds) +
+  tm_polygons(col = "Station") +
+  tm_borders() + 
+  tm_compass(type = "8star", position = c("right", "center")) +
+  tm_scale_bar(position = c("left", "BOTTOM")) +
+  tm_layout(legend.position = c("right", "bottom"), 
+            inner.margins = 0.1,
+            title = "Median Daily Flow (mm/day) of Wolf Creek and Bluestone River Watersheds 1980-2020",
+            title.position = c("center", "TOP")) +
+  tm_text("median_flow") 
+
+```
+Answer/Map discussion: This map shows us that Wolf Creek watershed is larger and has a lower median flow when corrected for area.Also, the watersheds are adjacent and and most likely would experiece similar hydrologic/geophysical conditions. 
+
+```{r}
+
+#2. Question 2 Step 1
+# Graph of discharge for both and one flow duration curve colored by site in mm/day
+
+# Create a plot of discharge for both rivers
+blueQ <- blue %>%
+  ggplot(aes(Date, Qmm_day)) +
+  geom_line(col = "#F8766D") +
+  ylab("Q (mm/day)") +
+  ggtitle("Bluestone River Discharge")
+
+wolfQ <-  wolf %>%
+  ggplot(aes(Date,Qmm_day)) +
+  geom_line(linetype = 22, col = "#00bfc4") +
+  ylab("Q (mm/day)") +
+  ggtitle("Wolf Creek Discharge")
+
+wolfQ
+ 
+#view plots 
+discharge <- blueQ + wolfQ
+
+#Question 2, Step 2 
+# Create a flow duration curve and color by river. I scaled the y axis to better see differences in the 2 streams.
+
+ bluewolffdc <- flow %>%
+   ggplot(aes(x = P, y= Qmm_day, color = site_nm, linetype = site_nm)) +
+  geom_line() +
+   scale_y_log10()+
+   xlab("% Time Flow is equaled or exceeded")+
+   ylab("Q (mm/day)") +
+   ggtitle("Flow Duration Curves for Bluestone River and Wolf Creek from 1980 to 2020")
+
+ bluewolffdc
+ 
+ #In console use unique(ggplot_build(bluewolffdc)$data[[1]]["colour"]) to find colors and linetype used in theme_classic
+
+ #Question 2, Step 3
+ #Create composite finalized plot
+ 
+ design <- c(area(1,1,2,4), area(3,1,4,4), area(5,1,6,2))
+ 
+ blueQ / wolfQ / bluewolffdc + plot_layout(design = design)
+ 
+```
+Answer/ Plot Discussion: In the discharge plots, Blue River has a weird flatline around the year ~1997-2005. Looking at flow dataframe, I see a gap in gage data from 1997-2004. In addition to a gap in Bluestone River gage data and larger area corrected flow (wolf creek getting up to 50 mm/day while Bluestone only goes to around 20 mm/day), it also seems like Wolf Creek may be a bit flashier perhaps due to topography and/or landuse.The FDC plot shows us in more detail what the map displayed. Overall wolf creek corrected flow is lower. This plot breaks it into what percent of the time these corrected flows are most different and to what degree.
